@@ -13,6 +13,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
+      NETWORK_ONE: minecraft-server-network
       DOCKER_COMPOSE_FILE: minecraft-server-docker-compose.yml
       APP_HOSTNAME: minecraft-server.heyvaldemar.net
       COMPOSE_PROJECT_NAME: minecraft-server
@@ -22,12 +23,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Create necessary Docker networks
+        run: |
+          docker network create $NETWORK_ONE || true
+
       - name: Start up services using Docker Compose
         run: docker compose -f $DOCKER_COMPOSE_FILE -p $COMPOSE_PROJECT_NAME up -d
 
       - name: Modify /etc/hosts for internal routing
         run: |
           echo "127.0.0.1 $APP_HOSTNAME" | sudo tee -a /etc/hosts
+
+      - name: Print Docker Compose services status
+        run: docker ps
 
       - name: Install Python and mcstatus
         run: |
@@ -43,8 +51,9 @@ jobs:
             sleep 10; \
           done'
 
-      - name: Print Docker Compose services status
-        run: docker ps
+      - name: Inspect Network Configuration
+        run: |
+          docker network inspect $NETWORK_ONE
 
       - name: Show container logs on failure
         if: failure()
