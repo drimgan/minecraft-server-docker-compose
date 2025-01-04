@@ -12,41 +12,44 @@ jobs:
   deploy-and-test:
     runs-on: ubuntu-latest
 
+    env:
+      DOCKER_COMPOSE_FILE: minecraft-server-docker-compose.yml
+      APP_HOSTNAME: minecraft-server.heyvaldemar.net
+      COMPOSE_PROJECT_NAME: minecraft-server
+      MINECRAFT_PORT: 25565
+
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      - name: Start up services using Docker Compose
+        run: docker compose -f $DOCKER_COMPOSE_FILE -p $COMPOSE_PROJECT_NAME up -d
 
-    - name: Create necessary Docker networks
-      run: |
-        docker network create minecraft-server-network || true
+      - name: Modify /etc/hosts for internal routing
+        run: |
+          echo "127.0.0.1 $APP_HOSTNAME" | sudo tee -a /etc/hosts
 
-    - name: Start up services using Docker Compose
-      run: docker compose -f minecraft-server-docker-compose.yml -p minecraft-server up -d
+      - name: Install Python and mcstatus
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pip
+          pip3 install mcstatus
 
-    - name: Modify /etc/hosts for internal routing
-      run: |
-        echo "127.0.0.1 minecraft-server.heyvaldemar.net" | sudo tee -a /etc/hosts
+      - name: Wait for the Minecraft Server to be ready
+        run: |
+          echo "Checking Minecraft server readiness at $APP_HOSTNAME:$MINECRAFT_PORT..."
+          timeout 5m bash -c 'while ! mcstatus $APP_HOSTNAME:$MINECRAFT_PORT status; do \
+            echo "Waiting for the Minecraft server to be ready..."; \
+            sleep 10; \
+          done'
 
-    - name: Install Python and mcstatus
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y python3-pip
-        pip3 install mcstatus
+      - name: Print Docker Compose services status
+        run: docker ps
 
-    - name: Check Minecraft Server status
-      run: |
-        mcstatus minecraft-server.heyvaldemar.net:25565 status
+      - name: Show container logs on failure
+        if: failure()
+        run: docker compose -f $DOCKER_COMPOSE_FILE -p $COMPOSE_PROJECT_NAME logs
 
-    - name: Print Docker Compose services status
-      run: docker ps
-
-    - name: Inspect Network Configuration
-      run: |
-        docker network inspect minecraft-server-network
-
-    - name: Shutdown Docker Compose services
-      if: always()
-      run: docker compose -f minecraft-server-docker-compose.yml -p minecraft-server down
+      - name: Shutdown Docker Compose services
+        if: always()
+        run: docker compose -f $DOCKER_COMPOSE_FILE -p $COMPOSE_PROJECT_NAME down
